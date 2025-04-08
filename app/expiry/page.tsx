@@ -8,6 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { CalendarIcon, AlertTriangleIcon, CheckCircleIcon, XCircleIcon } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 
 type Medicine = {
   id: number
@@ -20,21 +22,20 @@ type Medicine = {
 export default function ExpiryPage() {
   const [medicines, setMedicines] = useState<Medicine[]>([])
   const [loading, setLoading] = useState(true)
+  const [openDialog, setOpenDialog] = useState(false)
+  const [selectedMed, setSelectedMed] = useState<Medicine | null>(null)
 
   useEffect(() => {
-    const fetchMedicines = async () => {
-      setLoading(true)
-      const { data, error } = await supabase.from("medicines").select("*")
-      if (error) {
-        console.error("Error fetching data:", error)
-      } else {
-        setMedicines(data)
-      }
-      setLoading(false)
-    }
-
     fetchMedicines()
   }, [])
+
+  const fetchMedicines = async () => {
+    setLoading(true)
+    const { data, error } = await supabase.from("medicines").select("*")
+    if (error) console.error("Error fetching data:", error)
+    else setMedicines(data)
+    setLoading(false)
+  }
 
   const today = new Date()
   const threeMonthsFromNow = new Date()
@@ -43,7 +44,7 @@ export default function ExpiryPage() {
   const isExpired = (date: string) => new Date(`${date}T00:00:00`) < today
   const isExpiringSoon = (date: string) => {
     const expiry = new Date(`${date}T00:00:00`)
-    return expiry <= threeMonthsFromNow && expiry >= today
+    return expiry <= threeMonthsFromNow && expiry > today
   }
 
   const expired = medicines.filter((m) => isExpired(m.expiry_date))
@@ -52,26 +53,30 @@ export default function ExpiryPage() {
 
   const getStatusBadge = (expiry_date: string) => {
     if (isExpired(expiry_date)) {
-      return (
-        <Badge variant="destructive" className="flex items-center gap-1">
-          <XCircleIcon className="h-3 w-3" />
-          Expired
-        </Badge>
-      )
+      return <Badge variant="destructive" className="flex items-center gap-1"><XCircleIcon className="h-3 w-3" />Expired</Badge>
     } else if (isExpiringSoon(expiry_date)) {
-      return (
-        <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 flex items-center gap-1">
-          <AlertTriangleIcon className="h-3 w-3" />
-          Expiring Soon
-        </Badge>
-      )
+      return <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 flex items-center gap-1"><AlertTriangleIcon className="h-3 w-3" />Expiring Soon</Badge>
     } else {
-      return (
-        <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 flex items-center gap-1">
-          <CheckCircleIcon className="h-3 w-3" />
-          Valid
-        </Badge>
-      )
+      return <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 flex items-center gap-1"><CheckCircleIcon className="h-3 w-3" />Valid</Badge>
+    }
+  }
+
+  const handleUpdate = async () => {
+    if (!selectedMed) return
+    const { error } = await supabase
+      .from("medicines")
+      .update({
+        name: selectedMed.name,
+        expiry_date: selectedMed.expiry_date,
+        quantity: selectedMed.quantity
+      })
+      .eq("id", selectedMed.id)
+
+    if (error) {
+      console.error("Update error:", error)
+    } else {
+      setOpenDialog(false)
+      fetchMedicines()
     }
   }
 
@@ -79,7 +84,9 @@ export default function ExpiryPage() {
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-6">Expiry Tracking</h1>
 
+      {/* Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        {/* ...Card components same as before... */}
         <Card className="bg-red-50 border-red-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-red-800 flex items-center gap-2">
@@ -120,6 +127,7 @@ export default function ExpiryPage() {
         </Card>
       </div>
 
+      {/* Tabs */}
       <Tabs defaultValue="all">
         <TabsList className="mb-6">
           <TabsTrigger value="all">All Medicines</TabsTrigger>
@@ -129,18 +137,48 @@ export default function ExpiryPage() {
         </TabsList>
 
         <TabsContent value="all">
-          <ExpiryTable medicines={medicines} getStatusBadge={getStatusBadge} loading={loading} />
+          <ExpiryTable medicines={medicines} getStatusBadge={getStatusBadge} loading={loading} onReplaceClick={setSelectedMed} openDialog={setOpenDialog} />
         </TabsContent>
         <TabsContent value="expired">
-          <ExpiryTable medicines={expired} getStatusBadge={getStatusBadge} loading={loading} emptyMessage="No expired medicines found." />
+          <ExpiryTable medicines={expired} getStatusBadge={getStatusBadge} loading={loading} emptyMessage="No expired medicines found." onReplaceClick={setSelectedMed} openDialog={setOpenDialog} />
         </TabsContent>
         <TabsContent value="expiring-soon">
-          <ExpiryTable medicines={expiringSoon} getStatusBadge={getStatusBadge} loading={loading} emptyMessage="No medicines expiring soon." />
+          <ExpiryTable medicines={expiringSoon} getStatusBadge={getStatusBadge} loading={loading} emptyMessage="No medicines expiring soon." onReplaceClick={setSelectedMed} openDialog={setOpenDialog} />
         </TabsContent>
         <TabsContent value="valid">
-          <ExpiryTable medicines={valid} getStatusBadge={getStatusBadge} loading={loading} emptyMessage="No valid medicines found." />
+          <ExpiryTable medicines={valid} getStatusBadge={getStatusBadge} loading={loading} emptyMessage="No valid medicines found." onReplaceClick={setSelectedMed} openDialog={setOpenDialog} />
         </TabsContent>
       </Tabs>
+
+      {/* Replace Modal */}
+      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Replace Medicine</DialogTitle>
+          </DialogHeader>
+          {selectedMed && (
+            <div className="space-y-4 mt-4">
+              <Input
+                value={selectedMed.name || ""}
+                onChange={(e) => setSelectedMed({ ...selectedMed, name: e.target.value })}
+                placeholder="Medicine name"
+              />
+              <Input
+                type="date"
+                value={selectedMed.expiry_date || ""}
+                onChange={(e) => setSelectedMed({ ...selectedMed, expiry_date: e.target.value })}
+              />
+              <Input
+                type="number"
+                value={selectedMed.quantity ?? ""}
+                onChange={(e) => setSelectedMed({ ...selectedMed, quantity: parseInt(e.target.value) || 0 })}
+                placeholder="Quantity"
+              />
+              <Button onClick={handleUpdate}>Update</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -150,9 +188,11 @@ type ExpiryTableProps = {
   getStatusBadge: (expiry_date: string) => React.ReactNode
   emptyMessage?: string
   loading?: boolean
+  onReplaceClick: (med: Medicine) => void
+  openDialog: (v: boolean) => void
 }
 
-function ExpiryTable({ medicines, getStatusBadge, emptyMessage = "No medicines found.", loading = false }: ExpiryTableProps) {
+function ExpiryTable({ medicines, getStatusBadge, emptyMessage = "No medicines found.", loading = false, onReplaceClick, openDialog }: ExpiryTableProps) {
   return (
     <Card>
       <CardContent className="p-0">
@@ -187,7 +227,9 @@ function ExpiryTable({ medicines, getStatusBadge, emptyMessage = "No medicines f
                     <TableCell>{getStatusBadge(medicine.expiry_date)}</TableCell>
                     <TableCell>{medicine.quantity}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="outline" size="sm">Replace</Button>
+                      <Button variant="outline" size="sm" onClick={() => { onReplaceClick(medicine); openDialog(true); }}>
+                        Replace
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))
